@@ -12,10 +12,16 @@ It's very easy, just run the following command to install into /usr/local/bin
 Once this is complete you can simply run it from the command line like any other command using `iso2usb`
 
 # Usage
-`iso2usb file.iso /dev/disk#` (where # is the disk number of the USB drive, you can find this using `diskutil list` from console)
+
+If you want to pass the device directly (get the device from `diskutil list`)
+
+`iso2usb file.iso /dev/disk#` (# is a disk number)
+
+If you want to bring up a selection of USB devices and select from the menu (potentially more dangerous)
+
+`iso2usb file.iso`
 
 # Help make it better
-I have a few things on the todo list, mostly I would like to be able to detect all plugged in USB drives and give those as a selection to the user if they don't pass one
 
 Pull requests are welcome!
 

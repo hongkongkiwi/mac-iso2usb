@@ -11,6 +11,58 @@ HELP="USAGE: iso2usb blah.iso /dev/disk#"
 ISOPATH="$1"
 DEVPATH="$2"
 
+# Check if a value exists in an array
+# @param $1 mixed  Needle
+# @param $2 array  Haystack
+# @return  Success (0) if value exists, Failure (1) otherwise
+# Usage: in_array "$needle" "${haystack[@]}"
+# See: http://fvue.nl/wiki/Bash:_Check_if_array_element_exists
+in_array() {
+    local hay needle=$1
+    shift
+    for hay; do
+        [[ $hay == $needle ]] && return 0
+    done
+    return 1
+}
+
+## If the user didn't pass a device to write to, we offer a selection
+if [[ "$DEVPATH" == "" ]]; then
+	DEVICES=`diskutil list | grep "/dev"`
+	OPTIONS=()
+	OPTION_DEVICES=()
+	while read -r DEVICE; do
+    PROTOCOL=`diskutil info "$DEVICE" | grep 'Protocol:' | tr -d ' ' | cut -d':' -f2`
+		if [[ "$PROTOCOL" == "USB" ]]; then
+			DEVICE_SIZE=`diskutil info "$DEVICE" | grep 'Total Size:' | tr -d ' ' | cut -d':' -f2 | cut -d'(' -f1`
+			DEVICE_NAME=`diskutil info "$DEVICE" | grep "Device / Media Name:" | cut -d':' -f2 | sed -e 's/^[[:space:]]*//'`
+
+			OPTIONS+=("$DEVICE_NAME ($DEVICE_SIZE)")
+			OPTION_DEVICES+=("$DEVICE")
+		fi
+	done <<< "$DEVICES"
+	# Check if our devices list is empty
+	if [ ${#OPTIONS[@]} -eq 0 ]; then
+		echo "ERROR: Looks like there are no USB devices plugged in"
+		exit 0
+	fi
+	OPTIONS+=("Quit")
+	PS3='Please select USB device: '
+	select CHOICE in "${OPTIONS[@]}"; do
+		if [[ "$CHOICE" == "Quit" ]]; then
+			exit 0
+		elif [[ "$CHOICE" == "" ]]; then
+			echo "Invalid Selection"
+		elif [[ "$CHOICE" == "" ]]; then
+			exit 0
+		else
+			in_array "$CHOICE" "$OPTIONS"
+			DEVPATH=${OPTION_DEVICES[${?}]}
+			break
+		fi
+	done
+fi
+
 if [[ ! -b "$DEVPATH" ]]; then
 	echo "ERROR: Device not found. Aborting"
 	echo
@@ -122,6 +174,7 @@ if [[ `echo $ISOEXT | tr '[:upper:]' '[:lower:]'` == 'dmg' ]]; then
 	echo "-> ISO file is actually a DMG file, skipping convert"
 	DMGPATH="$ISOPATH"
 else
+	echo "-> Converting ISO to DMG file..."
 	#convert the ISO to Mac format
 	if [[ "$DEBUG" == "YES" ]]; then
 		echo "hdiutil convert -format UDRW -o $DMGPATH $ISOPATH"
@@ -138,7 +191,6 @@ else
 	GROUP=$(ls -dl . | cut -d' ' -f6)
 	chown ${OWNER}:${GROUP} "$DMGPATH"
 	CONVERTED="YES"
-	echo "-> Converted ISO to DMG file for writing"
 fi
 
 # Unmount the device target device
@@ -177,7 +229,7 @@ else
 	DMGSIZE=`ls -nl "$DMGPATH" | awk '{print $5}'`
 
 	if [[ "$DEBUG" == "YES" ]]; then
-		echo "dd if=$DMGPATH | pv --size $DMGSIZE -e -N 'Burning USB Drive' | sudo dd of=$RDISKPATH bs=1m >/dev/null 2>&1"
+		echo "dd if=$DMGPATH 2> /dev/null | pv --size $DMGSIZE -e -N 'Burning USB Drive' | sudo dd of=$RDISKPATH bs=1m >/dev/null 2>&1"
 	else
 		dd if="$DMGPATH" | pv --size $DMGSIZE -e -N 'Burning USB Drive' | sudo dd of="$RDISKPATH" bs="$DDBSSIZE" >/dev/null 2>&1
   fi
@@ -186,7 +238,7 @@ fi
 # Get rid of that pesky disk inserted is not readable error
 NOTIFICATION_PID=`ps axww | grep -i "[u]ser[n]otification[c]enter" | awk '{print $1}'`
 if [[ "$NOTIFICATION_PID" != "" ]]; then
-	kill "$NOTIFICATION_PID"
+	sudo kill "$NOTIFICATION_PID"
 fi
 
 DISK_IS_MOUNTED=`diskutil list | grep "$DEVPATH"`
