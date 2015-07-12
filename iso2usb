@@ -1,0 +1,213 @@
+#!/bin/bash
+
+##
+# AUTHOR: Andy Savage <andy@savage.hk>
+# GITHUB: www.github.com/hongkongkiwi
+# DESCRIPTION: This script is for converting ISO files and burning them to a USB drive
+##
+
+HELP="USAGE: iso2usb blah.iso /dev/disk#"
+
+ISOPATH="$1"
+DEVPATH="$2"
+
+if [[ ! -b "$DEVPATH" ]]; then
+	echo "ERROR: Device not found. Aborting"
+	echo
+	echo "$HELP"
+	exit 1
+fi
+
+# trap ctrl-c and call ctrl_c()
+trap ctrl_c INT
+
+# This just does some cleanup if necessary
+function ctrl_c() {
+	# Get rid of that pesky disk inserted is not readable error
+	NOTIFICATION_PID=`ps axww | grep -i "[u]ser[n]otification[c]enter" | awk '{print $1}'`
+	if [[ "$NOTIFICATION_PID" != "" ]]; then
+		kill "$NOTIFICATION_PID"
+	fi
+	if [[ "$CONVERTED" == "YES" && -f "$DMGPATH" ]]; then
+		rm "$DMGPATH"
+	fi
+	echo "ERROR: User Quit"
+	exit 255
+}
+
+#### Some Useful Variables ####
+
+DEBUG="YES"
+DEVINFO=`diskutil info "$DEVPATH" | grep 'Protocol' | tr -d ' ' | cut -d':' -f2`
+DMGPATH=`mktemp -t 'iso2usb'`
+ISOFILENAME=$(basename "$ISOPATH")
+ISOEXT="${ISOFILENAME##*.}"
+ISONAME="${ISOFILENAME%.*}"
+DISKNUMBER=`basename "$DEVPATH"`
+#add an 'r' to the beginning of the device name
+#rdisk or raw disks write much faster
+RDISKPATH="/dev/r$DISKNUMBER"
+DISKSIZE=`diskutil info "$DEVPATH" | grep 'Total Size:' | tr -d ' ' | cut -d':' -f2 | cut -d'(' -f1`
+DISKNAME=`diskutil info "$DEVPATH" | grep "Device / Media Name:" | cut -d':' -f2 | sed -e 's/^[[:space:]]*//'`
+
+DDBSSIZE="1m"
+
+PV_BIN=`which pv`
+
+#### DO SOME SANITY CHECKING ###
+
+PLATFORM='unknown'
+UNAMESTR=`uname`
+if [[ "$UNAMESTR" == 'Linux' ]]; then
+	PLATFORM='linux'
+elif [[ "$UNAMESTR" == 'FreeBSD' ]]; then
+	PLATFORM='freebsd'
+elif [[ "$UNAMESTR" == "Darwin" ]]; then
+	PLATFORM="mac"
+fi
+
+if [[ "$PLATFORM" != "mac" ]]; then
+		echo "ERROR: This script is designed only to run on Mac OSX"
+		echo "       if you have some time, please help to improve it"
+		echo "       and submit a pull request. I would appreciate it!"
+fi
+
+if [[ "$PV_BIN" == "" ]]; then
+	echo "WARNING: pv is not installed. I recommend you install it to get better transfer progress info"
+	echo "         if you have homebrew you can use 'brew install pv'"
+fi
+
+#check is script has been run as root /sudo
+if [[ $UID != 0 ]]; then
+	echo "Looks like your not running the script using sudo, we will do it for you"
+	RESULT=`sudo -p "Please enter your user password so we can gain root privileges: " echo > /dev/null`
+	if [[ $? != 0 ]]; then
+		echo "ERROR: We were unable to get root privileges!"
+		echo "       try running the script with sudo"
+		exit 1
+	fi
+fi
+
+if [[ ! -f "$ISOPATH" ]]; then
+	echo "ERROR: ISO not found."
+	echo "$HELP"
+	exit 1
+fi
+
+if [[ `echo $ISOEXT | tr '[:upper:]' '[:lower:]'` != 'dmg' && `echo $ISOEXT | tr '[:upper:]' '[:lower:]'` != 'iso' ]]; then
+	echo "ERROR: Accepted input ISO types are .iso or .dmg, anything else is not supported"
+	exit 1
+fi
+
+#check if device is USB. Exit if device is not USB.
+if [[ $DEVINFO != "USB" ]]; then
+	echo "Non-USB device specified. This is dangerous and I assume a mistake."
+	echo "Aborting."
+	exit 1
+fi
+
+echo "Are you sure you want to write \"$ISONAME.$ISOEXT\" to \"$DISKNAME\" ($DISKSIZE)?"
+read -p "WARNING: This is a destructive action! Proceed? (y/n)? " -n 1 -r
+echo    # (optional) move to a new line
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+	echo "ERROR: User Quit"
+	exit 1
+fi
+
+if [[ "$DEBUG" != "" ]]; then
+	echo "WARNING: Running in Debug mode! We won't actually do any destructive actions"
+fi
+
+if [[ `echo $ISOEXT | tr '[:upper:]' '[:lower:]'` == 'dmg' ]]; then
+	echo "-> ISO file is actually a DMG file, skipping convert"
+	DMGPATH="$ISOPATH"
+else
+	#convert the ISO to Mac format
+	if [[ "$DEBUG" != "" ]]; then
+		echo "hdiutil convert -format UDRW -o $DMGPATH $ISOPATH"
+	fi
+	if [[ -f "$DMGPATH" ]]; then
+		rm "$DMGPATH"
+	fi
+	RESULT=`hdiutil convert -format UDRW -o "$DMGPATH" "$ISOPATH"`
+	DMGPATH="$DMGPATH.dmg"
+
+	#change the ownership of the new file to match the owner of the
+	#current directory
+	OWNER=$(ls -dl . | cut -d' ' -f4)
+	GROUP=$(ls -dl . | cut -d' ' -f6)
+	chown ${OWNER}:${GROUP} "$DMGPATH"
+	CONVERTED="YES"
+	echo "-> Converted ISO to DMG file for writing"
+fi
+
+# Unmount the device target device
+if [[ $(mount | grep $DEVPATH) ]]; then
+	RESULT=`diskutil unmountDisk $DEVPATH`
+	echo "-> Unmounted disk $DEVPATH"
+	sleep 2
+	if [[ $(mount | grep $DEVPATH) ]]; then
+		echo "ERROR: Unable to unmount target device."
+		echo "Aborting."
+		exit 1
+	fi
+fi
+
+echo "-> Writing DMG file to device. This may take a while..."
+
+#start the image writing process in the background
+if [[ "$PV_BIN" == "" ]]; then
+	if [[ "$DEBUG" != "" ]]; then
+  	echo "dd if=$DMGPATH of=$RDISKPATH bs=1m &"
+  else
+		echo "real"
+		#dd if="$DMGPATH" of="$RDISKPATH" bs=1m &
+	fi
+
+	# This is the awkward way of getting dd progress
+	PID=$(ps | grep dd | grep -v grep)
+	PID=$(echo $PID | cut -d' ' -f1)
+
+	while [[ $(ps | grep $PID | grep -v grep) ]]
+	do
+		kill -INFO $PID
+		sleep 10
+	done
+else
+	# Progress using pv is much more interesting
+	DMGSIZE=`ls -nl "$DMGPATH" | awk '{print $5}'`
+
+	if [[ "$DEBUG" != "" ]]; then
+		echo "dd if=$DMGPATH | pv --size $DMGSIZE -e -N 'Burning USB Drive' | sudo dd of=$RDISKPATH bs=1m >/dev/null 2>&1"
+	else
+		dd if="$DMGPATH" | pv --size $DMGSIZE -e -N 'Burning USB Drive' | sudo dd of="$RDISKPATH" bs="$DDBSSIZE" >/dev/null 2>&1
+  fi
+fi
+
+# Get rid of that pesky disk inserted is not readable error
+NOTIFICATION_PID=`ps axww | grep -i "[u]ser[n]otification[c]enter" | awk '{print $1}'`
+if [[ "$NOTIFICATION_PID" != "" ]]; then
+	kill "$NOTIFICATION_PID"
+fi
+
+DISK_IS_MOUNTED=`diskutil list | grep "$DEVPATH"`
+if [[ "$DISK_IS_MOUNTED" == "$DEVPATH" ]]; then
+	# Eject the DISK
+	RESULT=`diskutil eject "$DEVPATH"`
+	echo "-> Finished. Disk is Ejected and is safe to remove."
+fi
+
+# Clear up converted DMG file if necessary
+if [[ "$CONVERTED" == "YES" && -f "$DMGPATH" ]]; then
+	if [[ "$DEBUG" == "" ]]; then
+		rm "$DMGPATH"
+	fi
+	echo "-> Cleaned up temp dmg file"
+fi
+
+echo
+echo "Note: If you want to use the disk now, please unplug and plug back in"
+echo
+echo "Have a nice day :-)"
+
+exit 0
