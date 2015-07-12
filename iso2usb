@@ -37,7 +37,7 @@ function ctrl_c() {
 
 #### Some Useful Variables ####
 
-DEBUG="YES"
+#DEBUG="YES" # Set to Yes to avoid non-destructive actions
 DEVINFO=`diskutil info "$DEVPATH" | grep 'Protocol' | tr -d ' ' | cut -d':' -f2`
 DMGPATH=`mktemp -t 'iso2usb'`
 ISOFILENAME=$(basename "$ISOPATH")
@@ -114,7 +114,7 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 	exit 1
 fi
 
-if [[ "$DEBUG" != "" ]]; then
+if [[ "$DEBUG" == "YES" ]]; then
 	echo "WARNING: Running in Debug mode! We won't actually do any destructive actions"
 fi
 
@@ -123,7 +123,7 @@ if [[ `echo $ISOEXT | tr '[:upper:]' '[:lower:]'` == 'dmg' ]]; then
 	DMGPATH="$ISOPATH"
 else
 	#convert the ISO to Mac format
-	if [[ "$DEBUG" != "" ]]; then
+	if [[ "$DEBUG" == "YES" ]]; then
 		echo "hdiutil convert -format UDRW -o $DMGPATH $ISOPATH"
 	fi
 	if [[ -f "$DMGPATH" ]]; then
@@ -157,11 +157,10 @@ echo "-> Writing DMG file to device. This may take a while..."
 
 #start the image writing process in the background
 if [[ "$PV_BIN" == "" ]]; then
-	if [[ "$DEBUG" != "" ]]; then
-  	echo "dd if=$DMGPATH of=$RDISKPATH bs=1m &"
+	if [[ "$DEBUG" == "YES" ]]; then
+  	echo "sudo dd if=$DMGPATH of=$RDISKPATH bs=1m &"
   else
-		echo "real"
-		#dd if="$DMGPATH" of="$RDISKPATH" bs=1m &
+		sudo dd if="$DMGPATH" of="$RDISKPATH" bs=1m &
 	fi
 
 	# This is the awkward way of getting dd progress
@@ -177,7 +176,7 @@ else
 	# Progress using pv is much more interesting
 	DMGSIZE=`ls -nl "$DMGPATH" | awk '{print $5}'`
 
-	if [[ "$DEBUG" != "" ]]; then
+	if [[ "$DEBUG" == "YES" ]]; then
 		echo "dd if=$DMGPATH | pv --size $DMGSIZE -e -N 'Burning USB Drive' | sudo dd of=$RDISKPATH bs=1m >/dev/null 2>&1"
 	else
 		dd if="$DMGPATH" | pv --size $DMGSIZE -e -N 'Burning USB Drive' | sudo dd of="$RDISKPATH" bs="$DDBSSIZE" >/dev/null 2>&1
@@ -199,7 +198,7 @@ fi
 
 # Clear up converted DMG file if necessary
 if [[ "$CONVERTED" == "YES" && -f "$DMGPATH" ]]; then
-	if [[ "$DEBUG" == "" ]]; then
+	if [[ "$DEBUG" != "YES" ]]; then
 		rm "$DMGPATH"
 	fi
 	echo "-> Cleaned up temp dmg file"
