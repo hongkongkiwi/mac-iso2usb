@@ -11,6 +11,8 @@ HELP="USAGE: iso2usb blah.iso [/dev/disk#]"
 ISOPATH="$1"
 DEVPATH="$2"
 
+DEBUG="No" # Set to Yes to avoid non-destructive actions
+
 # Check if a value exists in an array
 # @param $1 mixed  Needle
 # @param $2 array  Haystack
@@ -101,7 +103,6 @@ function ctrl_c() {
 
 #### Some Useful Variables ####
 
-#DEBUG="YES" # Set to Yes to avoid non-destructive actions
 DEVINFO=`diskutil info "$DEVPATH" | grep 'Protocol' | tr -d ' ' | cut -d':' -f2`
 DMGPATH=`mktemp -t 'iso2usb.XXXXXXXXXX'`
 ISOFILENAME=$(basename "$ISOPATH")
@@ -114,7 +115,7 @@ RDISKPATH="/dev/r$DISKNUMBER"
 DISKSIZE=`diskutil info "$DEVPATH" | grep 'Total Size:' | tr -d ' ' | cut -d':' -f2 | cut -d'(' -f1`
 DISKNAME=`diskutil info "$DEVPATH" | grep "Device / Media Name:" | cut -d':' -f2 | sed -e 's/^[[:space:]]*//'`
 
-DDBSSIZE="1m"
+DDBSSIZE="1M"
 
 PV_BIN=`which pv`
 
@@ -199,8 +200,8 @@ else
 
 	#change the ownership of the new file to match the owner of the
 	#current directory
-	OWNER=$(ls -dl . | cut -d' ' -f4)
-	GROUP=$(ls -dl . | cut -d' ' -f6)
+	OWNER=$(ls -dl . | cut -d' ' -f3)
+	GROUP=$(ls -dl . | cut -d' ' -f4)
 	chown ${OWNER}:${GROUP} "$DMGPATH"
 	CONVERTED="YES"
 fi
@@ -222,9 +223,9 @@ echo "-> Writing DMG file to device. This may take a while..."
 #start the image writing process in the background
 if [[ "$PV_BIN" == "" ]]; then
 	if [[ "$DEBUG" == "YES" ]]; then
-  	echo "sudo dd if=$DMGPATH of=$RDISKPATH bs=1m &"
+  	echo "sudo dd if=\"${DMGPATH}\" of=\"${RDISKPATH}\" bs=${DDBSSIZE} &"
   else
-		sudo dd if="$DMGPATH" of="$RDISKPATH" bs=1m &
+		sudo dd if="${DMGPATH}" of="${RDISKPATH}" bs="${DDBSSIZE}" &
 	fi
 
 	# This is the awkward way of getting dd progress
@@ -238,12 +239,12 @@ if [[ "$PV_BIN" == "" ]]; then
 	done
 else
 	# Progress using pv is much more interesting
-	DMGSIZE=`ls -nl "$DMGPATH" | awk '{print $5}'`
+	DMGSIZE=`ls -nl "${DMGPATH}" | awk '{print $5}'`
 
 	if [[ "$DEBUG" == "YES" ]]; then
-		echo "dd if=$DMGPATH 2> /dev/null | pv --size $DMGSIZE -e -N 'Burning USB Drive' | sudo dd of=$RDISKPATH bs=1m >/dev/null 2>&1"
+		echo "dd if=\"${DMGPATH}\" 2> /dev/null | pv --size ${DMGSIZE} -e -N 'Burning USB Drive' | sudo dd of=\"${RDISKPATH}\" bs=\"${DDBSSIZE}\" >/dev/null 2>&1"
 	else
-		dd if="$DMGPATH" | pv --size $DMGSIZE -e -N 'Burning USB Drive' | sudo dd of="$RDISKPATH" bs="$DDBSSIZE" >/dev/null 2>&1
+		dd if="${DMGPATH}" | pv --size ${DMGSIZE} -e -N 'Burning USB Drive' | sudo dd of="${RDISKPATH}" bs="${DDBSSIZE}" >/dev/null 2>&1
   fi
 fi
 
