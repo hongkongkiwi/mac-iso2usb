@@ -6,7 +6,7 @@
 # DESCRIPTION: This script is for converting ISO files and burning them to a USB drive
 ##
 
-HELP="USAGE: iso2usb blah.iso /dev/disk#"
+HELP="USAGE: iso2usb blah.iso [/dev/disk#]"
 
 ISOPATH="$1"
 DEVPATH="$2"
@@ -26,16 +26,28 @@ in_array() {
     return 1
 }
 
+## Check the user supplied a valid files
+if [ "$ISOPATH" == "" -o ! -f "$ISOPATH" ]; then
+  echo "ERROR: ISO file not found. Aborting"
+	echo
+	echo "$HELP"
+	exit 1
+fi
+
 ## If the user didn't pass a device to write to, we offer a selection
 if [[ "$DEVPATH" == "" ]]; then
 	DEVICES=`diskutil list | grep "/dev"`
 	OPTIONS=()
 	OPTION_DEVICES=()
 	while read -r DEVICE; do
-    PROTOCOL=`diskutil info "$DEVICE" | grep 'Protocol:' | tr -d ' ' | cut -d':' -f2`
-		if [[ "$PROTOCOL" == "USB" ]]; then
-			DEVICE_SIZE=`diskutil info "$DEVICE" | grep 'Total Size:' | tr -d ' ' | cut -d':' -f2 | cut -d'(' -f1`
-			DEVICE_NAME=`diskutil info "$DEVICE" | grep "Device / Media Name:" | cut -d':' -f2 | sed -e 's/^[[:space:]]*//'`
+    DEVICE=`echo "$DEVICE" | cut -d' ' -f1`
+    DISKUTIL_INFO=`diskutil info "$DEVICE"`
+    PROTOCOL=`echo "$DISKUTIL_INFO" | grep 'Protocol:' | tr -d ' ' | cut -d':' -f2`
+    DEVICE_LOCATION=`echo "$DISKUTIL_INFO" | grep 'Device Location:' | tr -d ' ' | cut -d':' -f2`
+    REMOVABLE_MEDIA=`echo "$DISKUTIL_INFO" | grep 'Removable Media:' | tr -d ' ' | cut -d':' -f2`
+    if [ "$PROTOCOL" == "USB" -a "$DEVICE_LOCATION" == "External" -a "$REMOVABLE_MEDIA" == "Yes" ]; then
+			DEVICE_SIZE=`echo "$DISKUTIL_INFO" | grep 'Total Size:' | tr -d ' ' | cut -d':' -f2 | cut -d'(' -f1`
+			DEVICE_NAME=`echo "$DISKUTIL_INFO" | grep "Device / Media Name:" | cut -d':' -f2 | sed -e 's/^[[:space:]]*//'`
 
 			OPTIONS+=("$DEVICE_NAME ($DEVICE_SIZE)")
 			OPTION_DEVICES+=("$DEVICE")
@@ -91,7 +103,7 @@ function ctrl_c() {
 
 #DEBUG="YES" # Set to Yes to avoid non-destructive actions
 DEVINFO=`diskutil info "$DEVPATH" | grep 'Protocol' | tr -d ' ' | cut -d':' -f2`
-DMGPATH=`mktemp -t 'iso2usb'`
+DMGPATH=`mktemp -t 'iso2usb.XXXXXXXXXX'`
 ISOFILENAME=$(basename "$ISOPATH")
 ISOEXT="${ISOFILENAME##*.}"
 ISONAME="${ISOFILENAME%.*}"
