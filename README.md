@@ -7,7 +7,7 @@ I often wanted to burn iso files to usb but it seemed like a real hassle, I look
 # Installation
 It's very easy, just run the following command to install into /usr/local/bin
 
-`wget -q -O /usr/local/bin/iso2usb https://raw.githubusercontent.com/hongkongkiwi/iso2usb/master/iso2usb | chmod +x /usr/local/bin`
+`wget -q -O /usr/local/bin/iso2usb https://raw.githubusercontent.com/hongkongkiwi/iso2usb/master/iso2usb | chmod +x /usr/local/bin/iso2usb`
 
 Once this is complete you can simply run it from the command line like any other command using `iso2usb`
 
