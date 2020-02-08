@@ -1,6 +1,8 @@
 iso2usb - Make your life easy on Mac!
 ============
 
+# PLEASE NOTE - THERE ARE MUCH BETTER TOOLS AVAILABLE SINCE I CREATED THIS, FOR EXAMPLE CHECKOUT (Balena ETCHER](https://www.balena.io/etcher/) which I personally use it's free, crossplatform and very good.
+
 # Why?
 I often wanted to burn iso files to usb but it seemed like a real hassle, I looked for a useful gui tool but couldnt find one, so I wrote this awesome bash script
 
